@@ -12,6 +12,19 @@ let lastActivity = Date.now();
 let sessionExpiry = Date.now() + SESSION_TIMEOUT;
 let isSessionValid = true;
 
+function setBadgeExpired() {
+  try {
+    chrome.action.setBadgeText({ text: "!" });
+    chrome.action.setBadgeBackgroundColor({ color: "#dc2626" });
+  } catch {}
+}
+
+function clearBadge() {
+  try {
+    chrome.action.setBadgeText({ text: "" });
+  } catch {}
+}
+
 // Rule Engine v2 - Same implementation as in options.js
 class RuleEngine {
   constructor() {
@@ -220,6 +233,45 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "Upload to Storacha",
     contexts: ["link", "image", "video", "audio"],
   });
+
+  try {
+    chrome.alarms.create("sessionCheck", { periodInMinutes: 5 });
+  } catch {}
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  try {
+    chrome.alarms.create("sessionCheck", { periodInMinutes: 5 });
+  } catch {}
+});
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== "sessionCheck") return;
+  try {
+    const valid = checkSessionValidity();
+    if (valid) {
+      clearBadge();
+      return;
+    }
+    const stored = await chrome.storage.local.get(["email", "spaceDid"]);
+    if (!stored.email) {
+      setBadgeExpired();
+      return;
+    }
+    try {
+      await initClient(stored.email, stored.spaceDid || null);
+      updateActivity();
+      clearBadge();
+      chrome.notifications.create({
+        type: "basic",
+        iconUrl: chrome.runtime.getURL("icons/48.png"),
+        title: "Session Restored",
+        message: "Your session was silently refreshed.",
+      });
+    } catch {
+      setBadgeExpired();
+    }
+  } catch {}
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -227,6 +279,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     initClient(msg.email, msg.spaceDid)
       .then((did) => {
         updateActivity(); 
+        clearBadge();
         sendResponse({ ok: true, spaceDid: did });
       })
       .catch((err) => {
@@ -251,6 +304,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     initClient(msg.email, msg.spaceDid)
       .then((did) => {
         updateActivity(); 
+        clearBadge();
         sendResponse({ ok: true, spaceDid: did });
       })
       .catch((err) => {
@@ -323,6 +377,7 @@ function updateActivity() {
   sessionExpiry = Date.now() + SESSION_TIMEOUT;
   isSessionValid = true;
   chrome.storage.local.set({ lastActivity, sessionExpiry });
+  clearBadge();
 }
 
 function checkSessionValidity() {
@@ -336,7 +391,7 @@ function checkSessionValidity() {
 async function handleSessionTimeout() {
   if (!isSessionValid) {
     client = null;
-    
+    setBadgeExpired();
     chrome.notifications.create({
       type: "basic",
       iconUrl: chrome.runtime.getURL("icons/48.png"),

@@ -49,6 +49,45 @@ async function loadUploadHistory() {
     .join("");
 }
 
+function renderSessionExpiredUI(email, spaceDid) {
+  const status = document.getElementById("status");
+  status.innerHTML = `
+    <div class="status-label">Session</div>
+    <div class="status-value" style="color:#b45309">Expired — please re-authenticate</div>
+    <button id="reauthBtn" class="button" style="margin-top:8px">Re-authenticate</button>
+  `;
+  const btn = document.getElementById("reauthBtn");
+  btn?.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Re-authenticating…";
+    try {
+      const resp = await chrome.runtime.sendMessage({
+        type: "REAUTH",
+        email,
+        spaceDid: spaceDid || null,
+      });
+      if (resp?.ok) {
+        status.innerHTML = `
+          <div class="status-label">Session</div>
+          <div class="status-value" style="color:#16a34a">Active</div>
+        `;
+      } else {
+        status.innerHTML = `
+          <div class="status-label">Session</div>
+          <div class="status-value" style="color:#dc2626">Re-auth failed: ${
+            resp?.error || "unknown"
+          }</div>
+        `;
+      }
+    } catch (e) {
+      status.innerHTML = `
+        <div class="status-label">Session</div>
+        <div class="status-value" style="color:#dc2626">Re-auth error: ${e?.message || e}</div>
+      `;
+    }
+  });
+}
+
 (async () => {
   const { email, spaceDid } = await chrome.storage.local.get([
     "email",
@@ -86,4 +125,41 @@ async function loadUploadHistory() {
 
   // Load upload history
   await loadUploadHistory();
+
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: "CHECK_SESSION" });
+    if (!resp?.isValid) {
+      try {
+        const reauth = await chrome.runtime.sendMessage({
+          type: "REAUTH",
+          email,
+          spaceDid: spaceDid || null,
+        });
+        if (!reauth?.ok) {
+          renderSessionExpiredUI(email, spaceDid);
+        } else {
+          const s = document.getElementById("status");
+          s.innerHTML += `
+            <div class="status-label" style="margin-top: 12px">Session</div>
+            <div class="status-value" style="color:#16a34a">Active</div>
+          `;
+        }
+      } catch {
+        renderSessionExpiredUI(email, spaceDid);
+      }
+    } else {
+      const s = document.getElementById("status");
+      s.innerHTML += `
+        <div class="status-label" style="margin-top: 12px">Session</div>
+        <div class="status-value" style="color:#16a34a">Active</div>
+      `;
+    }
+  } catch (e) {
+  }
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.type === "SESSION_EXPIRED") {
+      renderSessionExpiredUI(email, spaceDid);
+    }
+  });
 })();

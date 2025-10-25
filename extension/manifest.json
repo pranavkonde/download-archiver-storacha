@@ -3,7 +3,7 @@
   "name": "DownloadArchiver",
   "version": "1.0",
   "description": "Auto-upload your Chrome downloads to your Storacha Space",
-  "permissions": ["downloads", "storage", "notifications", "contextMenus"],
+  "permissions": ["downloads", "storage", "notifications", "contextMenus", "alarms"],
   "host_permissions": ["https://*/*", "http://*/*"],
   "background": {
     "service_worker": "background.js",
